@@ -2,10 +2,13 @@
 pragma solidity ^0.8.15;
 
 // Import this file to use console.log
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "hardhat/console.sol";
 import "./ERC20.sol";
 
-contract Staking {
+contract Staking is AccessControl {
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     uint256 public immutable percentInYear = 20;
     ERC20 public immutable stakingToken;
@@ -25,31 +28,26 @@ contract Staking {
 
     mapping(address => ItemStaking) private _balancesStakingItem;
     mapping(address => ItemReward) private _balancesRewardItem;
-    address private _admin;
 
     uint256 private _stakingFreezeOfMilliseconds;
 
     constructor(address stakingToken_, address rewardToken_, address admin_) {
         stakingToken = ERC20(stakingToken_);
         rewardToken = ERC20(rewardToken_);
-        _admin = admin_;
+        _setupRole(ADMIN_ROLE, admin_);
         _stakingFreezeOfMilliseconds = 20 * 60 * 1000;
     }
 
-    modifier onlyAdmin() {
-        require(msg.sender == _admin, "Not authorized");
-        _;
-    }
-
-    function setStakingFreezeInMinutes(uint numberOfMinutes) external onlyAdmin {
+    function setStakingFreezeInMinutes(uint numberOfMinutes) external {
+        require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not a admin");
         _stakingFreezeOfMilliseconds = numberOfMinutes * 60 * 1000;
     }
 
     function stake(uint256 amount) public {
         require(amount > 0, "amount = 0");
 
-        ItemReward itemReward = _balancesRewardItem[msg.sender];
-        if (itemReward != 0) {
+        ItemReward memory itemReward = _balancesRewardItem[msg.sender];
+        if (itemReward.user != address(0x0)) {
             uint256 currentTime = block.timestamp;
             uint256 diffSec = currentTime - itemReward.enrollmentTime;
             uint256 amountWithPercent = _calculateAmountByPercent(itemReward.amount, diffSec);
@@ -57,7 +55,7 @@ contract Staking {
             itemReward.amount = newAmount;
             itemReward.enrollmentTime = currentTime;
         } else {
-            itemReward = Item(
+            itemReward = ItemReward(
                 msg.sender,
                 amount,
                 block.timestamp
@@ -65,8 +63,8 @@ contract Staking {
             _balancesRewardItem[msg.sender] = itemReward;
         }
 
-        ItemStaking itemStaking = _balancesStakingItem[msg.sender];
-        if (itemStaking != 0) {
+        ItemStaking memory itemStaking = _balancesStakingItem[msg.sender];
+        if (itemStaking.user != address(0x0)) {
             stakingToken.transferFrom(itemReward.user, address(this), amount);
             itemStaking.amount += amount;
             itemStaking.time = block.timestamp;
@@ -75,20 +73,19 @@ contract Staking {
 
     function claim() public {
         address user = msg.sender;
-        ItemReward itemReward = _balancesRewardItem[user];
-        if (itemReward != 0 && itemReward.amount > 0) {
+        ItemReward memory itemReward = _balancesRewardItem[user];
+        if (itemReward.user != address(0x0) && itemReward.amount > 0) {
             rewardToken.transfer(itemReward.user, itemReward.amount);
-            delete _itemsMarketAuction[user];
+            delete _balancesRewardItem[user];
         }
     }
 
     function unstake() public {
-        ItemStaking itemStaking = _balancesStakingItem[msg.sender];
+        ItemStaking memory itemStaking = _balancesStakingItem[msg.sender];
+        require(itemStaking.amount > 0, "Staking amount is empty");
         require(block.timestamp - itemStaking.time > _stakingFreezeOfMilliseconds, "No time passed");
 
-        if (itemStaking.amount > 0 && itemStaking.time) {
-            stakingToken.transfer(msg.sender, itemStaking.amount);
-        }
+        stakingToken.transfer(msg.sender, itemStaking.amount);
     }
 
     function _calculateAmountByPercent(uint256 amount, uint256 second) internal view virtual returns (uint256) {
