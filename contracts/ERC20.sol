@@ -6,8 +6,9 @@ import "hardhat/console.sol";
 
 contract ERC20 {
 
-    string public name = "LP";
-    string public symbol = "LP";
+    string public name;
+    string public symbol;
+    uint8 public decimals;
 
     uint256 public totalSupply = 5000;
 
@@ -25,7 +26,10 @@ contract ERC20 {
         _;
     }
 
-    constructor() {
+    constructor(string memory name_, string memory symbol_, uint8 decimals_) {
+        name = name_;
+        symbol = symbol_;
+        decimals = decimals_;
         balances[msg.sender] = totalSupply;
         tokenOwner = msg.sender;
     }

@@ -14,81 +14,102 @@ contract Staking is AccessControl {
     ERC20 public immutable stakingToken;
     ERC20 public immutable rewardToken;
 
-    struct ItemReward {
-        address user;
-        uint256 amount;
-        uint256 enrollmentTime;
-    }
-
-    struct ItemStaking {
+    struct Item {
         address user;
         uint256 amount;
         uint256 time;
     }
 
-    mapping(address => ItemStaking) private _balancesStakingItem;
-    mapping(address => ItemReward) private _balancesRewardItem;
+    mapping(address => Item) private _balancesStakingItem;
+    mapping(address => Item) private _balancesRewardItem;
 
-    uint256 private _stakingFreezeOfMilliseconds;
+    uint256 private _stakingFreezeOfSeconds;
 
     constructor(address stakingToken_, address rewardToken_, address admin_) {
         stakingToken = ERC20(stakingToken_);
         rewardToken = ERC20(rewardToken_);
         _setupRole(ADMIN_ROLE, admin_);
-        _stakingFreezeOfMilliseconds = 20 * 60 * 1000;
+        _stakingFreezeOfSeconds = 20 * 60 * 1000;
     }
 
-    function setStakingFreezeInMinutes(uint numberOfMinutes) external {
+    function setStakingFreezeInSeconds(uint256 numberOfSeconds) external {
         require(hasRole(ADMIN_ROLE, msg.sender), "Caller is not a admin");
-        _stakingFreezeOfMilliseconds = numberOfMinutes * 60 * 1000;
+        _stakingFreezeOfSeconds = numberOfSeconds;
     }
 
     function stake(uint256 amount) public {
         require(amount > 0, "amount = 0");
 
-        ItemReward memory itemReward = _balancesRewardItem[msg.sender];
+        _staking(amount);
+        Item memory itemStaking = _balancesStakingItem[msg.sender];
+        uint256 currentStakingAmount = itemStaking.amount - amount;
+        _reward(currentStakingAmount);
+    }
+
+    function _reward(uint256 amount) internal virtual {
+        Item memory itemReward = _balancesRewardItem[msg.sender];
         if (itemReward.user != address(0x0)) {
+            uint256 rewardAmount = itemReward.amount;
             uint256 currentTime = block.timestamp;
-            uint256 diffSec = currentTime - itemReward.enrollmentTime;
-            uint256 amountWithPercent = _calculateAmountByPercent(itemReward.amount, diffSec);
-            uint256 newAmount = amountWithPercent + amount;
-            itemReward.amount = newAmount;
-            itemReward.enrollmentTime = currentTime;
+            uint256 diffSec = currentTime - itemReward.time;
+            uint256 amountByPercent = _calculateAmountByPercent(amount, diffSec);
+            rewardAmount = rewardAmount + amountByPercent;
+            itemReward.time = currentTime;
+            itemReward.amount = rewardAmount;
+            _balancesRewardItem[msg.sender] = itemReward;
         } else {
-            itemReward = ItemReward(
+            itemReward = Item(
                 msg.sender,
-                amount,
+                0,
                 block.timestamp
             );
             _balancesRewardItem[msg.sender] = itemReward;
         }
+    }
 
-        ItemStaking memory itemStaking = _balancesStakingItem[msg.sender];
+    function _staking(uint256 amount) internal virtual {
+        Item memory itemStaking = _balancesStakingItem[msg.sender];
         if (itemStaking.user != address(0x0)) {
-            stakingToken.transferFrom(itemReward.user, address(this), amount);
             itemStaking.amount += amount;
             itemStaking.time = block.timestamp;
+            _balancesStakingItem[msg.sender] = itemStaking;
+        } else {
+            itemStaking = Item(
+                msg.sender,
+                amount,
+                block.timestamp
+            );
+            _balancesStakingItem[msg.sender] = itemStaking;
         }
+
+        stakingToken.transferFrom(itemStaking.user, address(this), itemStaking.amount);
     }
 
     function claim() public {
         address user = msg.sender;
-        ItemReward memory itemReward = _balancesRewardItem[user];
-        if (itemReward.user != address(0x0) && itemReward.amount > 0) {
-            rewardToken.transfer(itemReward.user, itemReward.amount);
-            delete _balancesRewardItem[user];
+        Item memory itemStaking = _balancesStakingItem[user];
+        if (itemStaking.user != address(0x0)) {
+            _reward(itemStaking.amount);
+            Item memory itemReward = _balancesRewardItem[user];
+            if (itemReward.user != address(0x0) && itemReward.amount > 0) {
+                rewardToken.transfer(itemReward.user, itemReward.amount);
+                itemReward.amount = 0;
+                _balancesRewardItem[user] = itemReward;
+            }
         }
     }
 
-    function unstake() public {
-        ItemStaking memory itemStaking = _balancesStakingItem[msg.sender];
-        require(itemStaking.amount > 0, "Staking amount is empty");
-        require(block.timestamp - itemStaking.time > _stakingFreezeOfMilliseconds, "No time passed");
-
-        stakingToken.transfer(msg.sender, itemStaking.amount);
+    function _calculateAmountByPercent(uint256 amount, uint256 second) internal view virtual returns (uint256) {
+        return (amount * ((1 + ((percentInYear / 100) / 365 * 24 * 3600)) ** second));
     }
 
-    function _calculateAmountByPercent(uint256 amount, uint256 second) internal view virtual returns (uint256) {
-        return amount * (1 + ((percentInYear / 100) / 365 * 24 * 3600)) ** second;
+    function unstake() public {
+        Item memory itemStaking = _balancesStakingItem[msg.sender];
+        require(itemStaking.amount > 0, "Staking amount is empty");
+        require(block.timestamp - itemStaking.time > _stakingFreezeOfSeconds, "No time passed");
+
+        _reward(itemStaking.amount);
+        stakingToken.transfer(msg.sender, itemStaking.amount);
+        delete _balancesStakingItem[msg.sender];
     }
 }
