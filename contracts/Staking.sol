@@ -65,6 +65,7 @@ contract Staking is AccessControl {
             );
             _balancesRewardItem[msg.sender] = itemReward;
         }
+        console.log("itemReward amount", itemReward.amount);
     }
 
     function _staking(uint256 amount) internal virtual {
@@ -83,13 +84,17 @@ contract Staking is AccessControl {
         }
 
         stakingToken.transferFrom(itemStaking.user, address(this), itemStaking.amount);
+        console.log("itemStaking amount", itemStaking.amount);
     }
 
     function claim() public {
         address user = msg.sender;
+        console.log("user user", user);
         Item memory itemStaking = _balancesStakingItem[user];
+        console.log("itemStaking itemStaking", itemStaking.user);
         if (itemStaking.user != address(0x0)) {
             _reward(itemStaking.amount);
+            console.log("itemStaking1 amount", itemStaking.amount);
             Item memory itemReward = _balancesRewardItem[user];
             if (itemReward.user != address(0x0) && itemReward.amount > 0) {
                 rewardToken.transfer(itemReward.user, itemReward.amount);
@@ -100,16 +105,27 @@ contract Staking is AccessControl {
     }
 
     function _calculateAmountByPercent(uint256 amount, uint256 second) internal view virtual returns (uint256) {
-        return (amount * ((1 + ((percentInYear / 100) / 365 * 24 * 3600)) ** second));
+        amount = amount * 1e10;
+        uint256 f = (percentInYear * 1e10 / 100) / (365 * 24 * 3600);
+        return amount * f * second / 1e10;
     }
 
     function unstake() public {
-        Item memory itemStaking = _balancesStakingItem[msg.sender];
+        address user = msg.sender;
+        Item memory itemStaking = _balancesStakingItem[user];
         require(itemStaking.amount > 0, "Staking amount is empty");
         require(block.timestamp - itemStaking.time > _stakingFreezeOfSeconds, "No time passed");
 
         _reward(itemStaking.amount);
-        stakingToken.transfer(msg.sender, itemStaking.amount);
-        delete _balancesStakingItem[msg.sender];
+        Item memory itemReward = _balancesRewardItem[user];
+        if (itemReward.user != address(0x0) && itemReward.amount > 0) {
+            console.log("itemReward1111 amount", itemReward.amount);
+            rewardToken.transfer(itemReward.user, itemReward.amount);
+            itemReward.amount = 0;
+            _balancesRewardItem[user] = itemReward;
+        }
+
+        stakingToken.transfer(user, itemStaking.amount);
+        delete _balancesStakingItem[user];
     }
 }

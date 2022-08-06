@@ -11,7 +11,7 @@ describe("Token contract", function () {
         console.log("Token ERC20 LP address:", tokenErc20LP.address);
 
         const tokenFactoryErc20 = await ethers.getContractFactory("ERC20");
-        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 18);
+        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 10);
         console.log("Token simple ERC20 address:", tokenErc20.address);
 
         const tokenFactoryStaking = await ethers.getContractFactory("Staking");
@@ -44,7 +44,7 @@ describe("Token contract", function () {
         await tokenErc20LP.mint(500000000);
 
         const tokenFactoryErc20 = await ethers.getContractFactory("ERC20");
-        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 18);
+        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 10);
         console.log("Token simple ERC20 address:", tokenErc20.address);
         await tokenErc20.mint(500000000);
 
@@ -80,13 +80,15 @@ describe("Token contract", function () {
         await tokenErc20LP.mint(500000000);
 
         const tokenFactoryErc20 = await ethers.getContractFactory("ERC20");
-        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 18);
+        const tokenErc20 = await tokenFactoryErc20.deploy("S", "S", 10);
         console.log("Token simple ERC20 address:", tokenErc20.address);
-        await tokenErc20.mint(500000000);
+        await tokenErc20.mint(5000000000);
 
         const tokenFactoryStaking = await ethers.getContractFactory("Staking");
         const tokenStaking = await tokenFactoryStaking.deploy(tokenErc20LP.address, tokenErc20.address, owner.address);
         console.log("Token staking address:", tokenStaking.address);
+
+        await tokenErc20.transfer(tokenStaking.address, 5000000000);
 
         await tokenErc20LP.transfer(addr1.address, 1000000);
         await tokenErc20LP.connect(addr1).approve(tokenStaking.address, 1000000);
